@@ -1,0 +1,134 @@
+---
+title: "Deployment"
+output: html_document
+date: '2023-05-02'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(plotly)
+library(fairness)
+library(dplyr)
+library(randomForest)
+library(pdp)
+```
+
+# Data preprocessing
+
+```{r}
+data_bikes <- read.csv("C:/Users/mperi/GCD/3/EDM/prácticas/Practica 5 Sin sol/day.csv")
+
+# Data preprocessing
+seasons_onehot <- model.matrix(~ as.factor(data_bikes$season) - 1)
+data_bikes$season_spring <- seasons_onehot[, 2]
+data_bikes$season_summer <- seasons_onehot[, 3]
+data_bikes$season_fall <- seasons_onehot[, 4]
+
+# Creates MISTY and RAIN features
+data_bikes$MISTY <- as.integer(data_bikes$weathersit == 2)
+data_bikes$RAIN <- as.integer(data_bikes$weathersit %in% c(3, 4))
+# Denormalization based on "Dataset description.pdf" explanations. 
+t_min <- -8
+t_max <- 39
+data_bikes$temp <- data_bikes$temp * (t_max - t_min) + t_min
+data_bikes$hum <- data_bikes$hum * 100
+wind_max <- 67
+data_bikes$windspeed <- data_bikes$windspeed * wind_max
+
+# Creates days_since_2011 feature to save the number of days from 1-1-2011 for each sample
+data_bikes$dteday <- as.Date(data_bikes$dteday)
+start_date <- as.Date("2011-01-01")
+data_bikes$days_since_2011 <- as.numeric(data_bikes$dteday - start_date)
+```
+
+# 1. One dimensional Partial Dependence Plot (PDP)
+
+```{r}
+# Definir las variables predictoras y la variable objetivo
+predictors <- data_bikes[, c("workingday", "holiday", "season_spring", "season_summer","season_fall", "MISTY", "RAIN", "temp", "hum", "windspeed", "days_since_2011")]
+
+target <- data_bikes$cnt
+
+# Entrenar el modelo de bosque aleatorio
+rf_model <- randomForest(predictors, target, ntree=100, importance=TRUE)
+
+# Crear PDP para otras características de interés
+
+pdp_wind <- partial(rf_model, pred.var = "windspeed", plot = TRUE, plot.engine = "ggplot2") + ylab("Predicted number of bike rentals") + scale_y_continuous(limits = c(0, 6000))
+
+pdp_hum <- partial(rf_model, pred.var = "hum", plot = TRUE, 
+                   plot.engine = "ggplot2") + ylab("Predicted number of bike rentals") + scale_y_continuous(limits = c(0, 6000))
+
+pdp_temp <- partial(rf_model, pred.var = "temp", plot = TRUE,plot.engine = "ggplot2") + ylab("Predicted number of bike rentals") + scale_y_continuous(limits = c(0, 6000))
+
+pdp_2011 <- partial(rf_model, pred.var = "days_since_2011", plot = TRUE, plot.engine = "ggplot2") + ylab("Predicted number of bike rentals") + scale_y_continuous(limits = c(0, 6000))
+
+plot(pdp_wind)
+plot(pdp_hum)
+plot(pdp_temp)
+plot(pdp_2011)
+```
+
+## Analyse the influence of days since 2011, temperature, humidity and wind speed on the predicted bike counts.
+
+[COMPLETAR]
+
+#2. Bidimensional Partial Dependency Plot
+
+```{r message=FALSE}
+# Extract a set of random samples from the BBDD before generating the data for the Partial Dependency Plot. 
+
+bike_sample <- data_bikes %>% sample_n(size = 400, replace = FALSE)
+```
+
+```{r message=FALSE}
+predictors_sample <- bike_sample[, c("workingday", "holiday", "season_spring", "season_summer","season_fall", "MISTY", "RAIN", "temp", "hum", "windspeed", "days_since_2011")]
+
+target_sample <- bike_sample$cnt
+
+# Fit random forest model
+rf_model_sample <- randomForest(predictors_sample, target_sample, ntree=100, importance=TRUE)
+
+# Generate PDP
+bike_pdp <- partial(rf_model_sample, pred.var = c("hum", "temp"), grid.resolution = 20, plot = TRUE, plot.engine = "ggplot2") + geom_tile(width = 0.1, height = 0.1) + scale_fill_gradientn(colors = c("blue", "green", "yellow", "red")) + labs(title = "Partial Dependence Plot for Bike Rentals", x = "Humidity", y = "Temperature", fill = "Predicted Bikes Rented")
+
+bike_pdp
+```
+## Interpret the results
+
+[COMPLETAR]
+
+# 3.PDP to explain the price of a house.
+
+```{r}
+house_data <- read.csv("C:/Users/mperi/GCD/3/EDM/prácticas/Practica 5 Sin sol/kc_house_data.csv")
+house_sample <- house_data %>% sample_n(size = 10000, replace = FALSE)
+```
+
+```{r}
+predictors_house <- house_sample[, c("bedrooms", "bathrooms", "sqft_living", "sqft_lot", "floors", "yr_built")]
+
+target_house <- house_sample$price
+
+rf_house <- randomForest(predictors_house, target_house, ntree=100, importance=TRUE)
+```
+
+```{r}
+# PDP plot
+pdp_bed <- partial(rf_house, pred.var = "bedrooms", plot = TRUE, plot.engine = "ggplot2") + ylab("Price")
+
+pdp_bath <- partial(rf_house, pred.var = "bathrooms", plot = TRUE, plot.engine = "ggplot2") + ylab("Price") + scale_y_continuous(labels = scales::number_format(scale = 1, big.mark = ""))
+
+pdp_sqft <- partial(rf_house, pred.var = "sqft_living", plot = TRUE,plot.engine = "ggplot2") + ylab("Price")
+
+pdp_floors <- partial(rf_house, pred.var = "floors", plot = TRUE, plot.engine = "ggplot2") + ylab("Price")
+
+plot(pdp_bed)
+plot(pdp_bath)
+plot(pdp_sqft)
+plot(pdp_floors)
+```
+## Analyse the influence of bedrooms, bathrooms, sqft_living and floors on the predicted price.
+
+[COMPLETAR] (Comentar que no tiene ningún sentido que el precio de las viviendas baje con el aumento del número de habitaciones)
